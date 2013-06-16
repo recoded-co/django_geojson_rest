@@ -177,6 +177,7 @@ class PropertyView(RequestHandler):
         
         #query the most restrictive first
         properties = Property.objects.all()
+        
         if property != None and property != '@all':
             properties = properties.filter(id = property)
             
@@ -253,6 +254,11 @@ class PropertyView(RequestHandler):
             if user == request.user:
                 property = Property.objects.get(id = property,
                                             user = user)
+                
+                referer = request.META.get('HTTP_REFERER', None) 
+                if referer:
+                    json_object['referer'] = referer
+                
                 property.update(json_object)
             else:
                 return HttpResponseForbidden('You cannot update others properties')

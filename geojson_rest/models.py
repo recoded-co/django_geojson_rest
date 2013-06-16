@@ -29,7 +29,6 @@ class Property(models.Model):
     user = models.ForeignKey(User)
     group = models.CharField(default = '@self',
                              max_length = 50)
-    
     json_data = models.OneToOneField(JSON)
     time = models.OneToOneField(TimeD)
 
