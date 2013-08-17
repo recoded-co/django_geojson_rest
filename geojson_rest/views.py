@@ -166,6 +166,19 @@ class FeatureView(RequestHandler):
     
 class PropertyView(RequestHandler):
     
+    def _update_timestamp(self, json_object):
+        from datetime import datetime
+        now = datetime.now().isoformat()
+        timestamps = {}
+        for key in json_object:
+            if key == 'id':
+                timestamps['last-update']=now
+            else:
+                timestamps['%s-last-update' % key]=now
+        for k in timestamps:
+            json_object[k]=timestamps[k]
+        return json_object
+    
     def get(self,
             request,
             user = '@me',
@@ -203,9 +216,8 @@ class PropertyView(RequestHandler):
             user = '@me',
             group = '@self',
             feature = '@null'):
-        
         # load the json and validate format
-        json_object = json.loads(request.body)
+        json_object = json.loads(request.body)        
         user = get_user(request,
                         username = user)
         if user == None:
@@ -216,7 +228,15 @@ class PropertyView(RequestHandler):
         json_obj_response = {}
         new_property = Property(user = user,
                                 group = group)
+
+        self._update_timestamp(json_object)
+        
+        referer = request.META.get('HTTP_REFERER', None) 
+        if referer:
+            json_object['referer'] = referer
+
         new_property.create(json_object)
+        print new_property
         
         uri = ""
         if feature != '@null': #connect feature to property
@@ -233,9 +253,7 @@ class PropertyView(RequestHandler):
                                       group,
                                       feature,
                                       new_property.id)
-        
         created_entity = json.dumps(new_property.to_json())
-        
         return HttpResponseCreated(uri, created_entity)
         
     def put(self,
@@ -244,25 +262,24 @@ class PropertyView(RequestHandler):
             group = '@self',
             feature = None,
             property = None):
-        
+        print 'put!!!'
         if property == None:
+            print 'property None'
             return HttpResponseBadRequest("You need to provide a property id "
                                           "to make this request")
         else:
+            print 'propert not None'
             json_object = json.loads(request.body)
+            print '1. >>>>>> %s'+str(json_object)
             user = get_user(request, user)
             if user == request.user:
                 property = Property.objects.get(id = property,
                                             user = user)
-                
-                referer = request.META.get('HTTP_REFERER', None) 
-                if referer:
-                    json_object['referer'] = referer
-                
+                self._update_timestamp(json_object)
                 property.update(json_object)
             else:
                 return HttpResponseForbidden('You cannot update others properties')
-        
+        print 'put response'
         return HttpResponse(json.dumps(property.to_json()))
     
     def delete(self,
