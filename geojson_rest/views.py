@@ -236,7 +236,6 @@ class PropertyView(RequestHandler):
             json_object['referer'] = referer
 
         new_property.create(json_object)
-        print new_property
         
         uri = ""
         if feature != '@null': #connect feature to property
@@ -262,15 +261,12 @@ class PropertyView(RequestHandler):
             group = '@self',
             feature = None,
             property = None):
-        print 'put!!!'
+        
         if property == None:
-            print 'property None'
             return HttpResponseBadRequest("You need to provide a property id "
                                           "to make this request")
         else:
-            print 'propert not None'
             json_object = json.loads(request.body)
-            print '1. >>>>>> %s'+str(json_object)
             user = get_user(request, user)
             if user == request.user:
                 property = Property.objects.get(id = property,
@@ -279,7 +275,6 @@ class PropertyView(RequestHandler):
                 property.update(json_object)
             else:
                 return HttpResponseForbidden('You cannot update others properties')
-        print 'put response'
         return HttpResponse(json.dumps(property.to_json()))
     
     def delete(self,
