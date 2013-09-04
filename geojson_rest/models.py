@@ -31,6 +31,14 @@ class Property(models.Model):
                              max_length = 50)
     json_data = models.OneToOneField(JSON)
     time = models.OneToOneField(TimeD)
+    json_str = models.TextField(blank=True)
+
+    def get_json_str(self):
+        if self.json_str:
+            return self.json_str
+        self.json_str = json.dumps(self.to_json())
+        self.save()
+        return self.json_str
 
     def create(self, properties, *args, **kwargs):
         """
@@ -45,11 +53,19 @@ class Property(models.Model):
         self.time = timed
         super(Property, self).save(*args, **kwargs)
 
+        # kind of a cache for json
+        self.json_str = json.dumps(self.to_json())
+        super(Property, self).save(*args, **kwargs)
+
     def update(self, properties, *args, **kwargs):
         new_json = json.loads(self.json_data.json_string)
         new_json.update(properties)
         self.json_data.json_string = json.dumps(new_json)
         self.json_data.save()
+
+        # kind of a cache for json
+        self.json_str = json.dumps(self.to_json())
+        super(Property, self).save(*args, **kwargs)
 
     def to_json(self):
         if self.time.expire_time == None:
@@ -66,6 +82,7 @@ class Property(models.Model):
         return retval
 
     def delete(self, *args, **kwargs):
+        
         super(Property, self).delete()
     
     def get_create_time(self):
@@ -156,8 +173,25 @@ class Feature(FeatureBase):
     this inherits form base and is the model
     that should be used for crud functionality
     """
+    json_str = models.TextField(blank=True)
     geometry = gismodels.GeometryField(srid = getattr(settings, 'SPATIAL_REFERENCE_SYSTEM_ID', 4326))
     properties = models.ManyToManyField(Property)
+
+    def get_json_str(self):
+        if self.json_str:
+            return self.json_str
+        self.json_str = json.dumps(self.to_json())
+        self.save()
+        return self.json_str
+    
+    def update_json_str(self):
+        if self.json_str != json.dumps(self.to_json()):
+            self.json_str = json.dumps(self.to_json())
+            self.save()
+            return True
+        else:
+            return False
+            
 
     def create(self, feature, *args, **kwargs):
         """
@@ -204,6 +238,10 @@ class Feature(FeatureBase):
         super(Feature, self).save(*args, **kwargs)
         self.properties.add(prop)
 
+        # kind of a cache for json
+        self.json_str = json.dumps(self.to_json())
+        super(Feature, self).save(*args, **kwargs)
+
     def update(self, feature, user, *args, **kwargs):
         """
         This function updates the feature, user indicates
@@ -218,6 +256,7 @@ class Feature(FeatureBase):
             old_property = self.properties.get(user = user)
             old_property.update(feature['properties'])
             self.save(*args, **kwargs)
+
         else:
             try:
                 old_property = self.properties.get(user = user)
@@ -227,146 +266,7 @@ class Feature(FeatureBase):
                                 group = self.group)
                 prop.create(feature['properties'], user)
                 self.properties.add(prop)
+        # kind of a cache for json
+        self.json_str = json.dumps(self.to_json())
+        self.save(*args, **kwargs)
 
-#geometry models inherited form generic Feature
-class PointFeature(FeatureBase):
-    """
-    This model handle the point features
-    
-    This is a not managed database class and
-    requires a view to be made in the database.
-    The view creation sql is in the
-    sql/feature.sql file.
-    """
-    geometry = gismodels.PointField(srid = getattr(settings, 'SPATIAL_REFERENCE_SYSTEM_ID', 4326))
-    properties = models.ManyToManyField(Property,
-                                        through = 'PointFeatureProperty')
-    
-    # no adding or deleting allowed for DB views
-    def has_add_permission(self, request, obj=None):
-        return False
-    def has_delete_permission(self, request, obj=None):
-        return False
-    
-    #this is for superusers
-    def delete(self, *args, **kwargs):
-        Feature.objects.get(id = self.id).delete()
-        
-    class Meta:
-        managed = False
-        db_table = 'pointfeature'
-        verbose_name = _('place')
-        verbose_name_plural = _('places')
-        
-#hack to handle manytomanyfields in database views and django ORM
-class PointFeatureProperty(models.Model):
-    feature = models.ForeignKey(PointFeature)
-    property = models.ForeignKey(Property)
-    
-    # no adding or deleting allowed for DB views
-    def has_add_permission(self, request, obj=None):
-        return False
-    def has_delete_permission(self, request, obj=None):
-        return False
-    
-    #this is for superusers
-    def delete(self, *args, **kwargs):
-        Property.objects.get(id = self.id).delete()
-    
-    class Meta:
-        managed = False
-        db_table = 'pointfeatureproperty'
-        verbose_name = _('place property')
-        verbose_name_plural = _('place properties')
-
-class LinestringFeature(FeatureBase):
-    """
-    This model handle the linestring features
-    
-    This is a not managed database class and
-    requires a view to be made in the database.
-    The view creation sql is in the
-    sql/feature.sql file.
-    """
-    geometry = gismodels.LineStringField(srid = getattr(settings, 'SPATIAL_REFERENCE_SYSTEM_ID', 4326))
-    properties = models.ManyToManyField(Property,
-                                        through = 'LinestringFeatureProperty')
-    
-    # no adding or deleting allowed for DB views
-    def has_add_permission(self, request, obj=None):
-        return False
-    def has_delete_permission(self, request, obj=None):
-        return False
-    
-    #this is for superusers
-    def delete(self, *args, **kwargs):
-        Feature.objects.get(id = self.id).delete()
-    
-    class Meta:
-        managed = False
-        db_table = 'linestringfeature'
-        verbose_name = _('route')
-        verbose_name_plural = _('routes')
-
-#hack to handle manytomanyfields in database views and django ORM
-class LinestringFeatureProperty(models.Model):
-    feature = models.ForeignKey(LinestringFeature)
-    property = models.ForeignKey(Property)
-    
-    # no adding or deleting allowed for DB views
-    def has_add_permission(self, request, obj=None):
-        return False
-    def has_delete_permission(self, request, obj=None):
-        return False
-    
-    class Meta:
-        managed = False
-        db_table = 'linestringfeatureproperty'
-        verbose_name = _('route property')
-        verbose_name_plural = _('route properties')
-        
-class PolygonFeature(FeatureBase):
-    """
-    This model handle the polygon features
-    
-    This is a not managed database class and
-    requires a view to be made in the database.
-    The view creation sql is in the
-    sql/feature.sql file.
-    """
-    geometry = gismodels.PolygonField(srid = getattr(settings, 'SPATIAL_REFERENCE_SYSTEM_ID', 4326))
-    properties = models.ManyToManyField(Property,
-                                        through = 'PolygonFeatureProperty')
-    
-    # no adding or deleting allowed for DB views
-    def has_add_permission(self, request, obj=None):
-        return False
-    def has_delete_permission(self, request, obj=None):
-        return False
-    
-    #this is for superusers
-    def delete(self, *args, **kwargs):
-        Feature.objects.get(id = self.id).delete()
-    
-    class Meta:
-        managed = False
-        db_table = 'polygonfeature'
-        verbose_name = _('area')
-        verbose_name_plural = _('areas')
-        
-#hack to handle manytomanyfields in database views and django ORM
-class PolygonFeatureProperty(models.Model):
-    feature = models.ForeignKey(PolygonFeature)
-    property = models.ForeignKey(Property)
-    
-    # no adding or deleting allowed for DB views
-    def has_add_permission(self, request, obj=None):
-        return False
-    def has_delete_permission(self, request, obj=None):
-        return False
-    
-    class Meta:
-        managed = False
-        db_table = 'polygonfeatureproperty'
-        verbose_name = _('area property')
-        verbose_name_plural = _('area properties')

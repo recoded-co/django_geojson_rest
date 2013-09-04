@@ -89,17 +89,21 @@ class FeatureView(RequestHandler):
             
         featurecollection = {
             'type': 'FeatureCollection',
-            'features': [feat.to_json() for feat in features],
+            'features': 'FEATURES',
             'crs': {"type": "name", "properties": {"code": "EPSG:%i" % srid}}
         }
-        
-        return HttpResponse(json.dumps(featurecollection))
+        collection_str = json.dumps(featurecollection)
+        collection_str = collection_str.replace(
+                '\"FEATURES\"',
+                '[' + ', '.join([feat.get_json_str() for feat in features]) + ']')
+        return HttpResponse(collection_str)
         
     def post(self,
             request,
             user = '@me',
             group = '@self',
             feature = None):
+        group = group[:50]
         
         # load the json and validate format
         json_object = json.loads(request.body)
@@ -130,6 +134,7 @@ class FeatureView(RequestHandler):
             user = '@me',
             group = '@self',
             feature = None):
+        group = group[:50]
         
         if feature == None:
             return HttpResponseBadRequest('You need to provide a feature id')
@@ -189,8 +194,7 @@ class PropertyView(RequestHandler):
         properties = [] #default empty list
         
         #query the most restrictive first
-        properties = Property.objects.all()
-        
+        properties = Property.objects.filter(feature=None)
         if property != None and property != '@all':
             properties = properties.filter(id = property)
             
@@ -207,15 +211,20 @@ class PropertyView(RequestHandler):
         else:
             property_collection = {
                 'totalResults': len(properties),
-                'entry': [prop.to_json() for prop in properties]
+                'entry': 'ENTRY'
             }
-            return HttpResponse(json.dumps(property_collection))
+            collection_str = json.dumps(property_collection)
+            collection_str = collection_str.replace(
+                    '\"ENTRY\"',
+                    '[' + ', '.join([prop.get_json_str() for prop in properties]) + ']')
+            return HttpResponse(collection_str)
     
     def post(self,
             request,
             user = '@me',
             group = '@self',
             feature = '@null'):
+        group = group[:50]
         # load the json and validate format
         json_object = json.loads(request.body)        
         user = get_user(request,
@@ -239,8 +248,10 @@ class PropertyView(RequestHandler):
         
         uri = ""
         if feature != '@null': #connect feature to property
-            Feature.objects.get(id = feature,
-                               group = group).properties.add(new_property)
+            feat = Feature.objects.get(id = feature, group = group)
+            feat.properties.add(new_property)
+            #update features JSON cache
+            feat.update_json_str()
             uri = "%s/%s/%s/%s/%i" % (reverse('prop'),
                                       user.username,
                                       group,
@@ -261,7 +272,9 @@ class PropertyView(RequestHandler):
             group = '@self',
             feature = None,
             property = None):
-        
+
+        group = group[:50]
+
         if property == None:
             return HttpResponseBadRequest("You need to provide a property id "
                                           "to make this request")
@@ -273,6 +286,9 @@ class PropertyView(RequestHandler):
                                             user = user)
                 self._update_timestamp(json_object)
                 property.update(json_object)
+                if property.feature_set.count() > 0: #update features connected to property
+                    for feat in property.feature_set.all():
+                        feat.update_json_str()
             else:
                 return HttpResponseForbidden('You cannot update others properties')
         return HttpResponse(json.dumps(property.to_json()))
@@ -289,7 +305,12 @@ class PropertyView(RequestHandler):
         elif not request.user.is_authenticated():
             return HttpResponseForbidden('You need to sign in to delete properties')
         else:
-            Property.objects.get(id = property).delete()
+            property = Property.objects.get(id = property)
+            if property.feature_set.count() > 0: #delete property from connected features 
+                for feat in property.feature_set.all():
+                    feat.properties.remove(property)
+                    feat.update_json_str()
+            property.delete()
         
         return HttpResponse("A property was deleted")
 
